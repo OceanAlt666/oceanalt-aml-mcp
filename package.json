@@ -1,0 +1,17 @@
+{
+  "name": "oceanalt-aml-mcp",
+  "version": "0.2.0",
+  "description": "OceanAlt AML 的 MCP server —— 让 Claude / 任意 MCP agent 原生调用地址合规筛查(免费)+ x402 付费判决/追踪/批量。",
+  "type": "module",
+  "bin": { "oceanalt-aml-mcp": "server.mjs" },
+  "main": "server.mjs",
+  "files": ["server.mjs", "README.md"],
+  "keywords": ["mcp", "aml", "x402", "agent", "compliance", "oceanalt", "claude", "sanctions", "usdc", "web3"],
+  "license": "MIT",
+  "author": "OceanAlt (https://oceanalt.com)",
+  "homepage": "https://oceanalt.com/en/api-docs",
+  "bugs": { "url": "https://oceanalt.com/en/partner" },
+  "publishConfig": { "registry": "https://registry.npmjs.org/", "access": "public" },
+  "dependencies": { "@modelcontextprotocol/sdk": "^1.0.0", "zod": "^3.23.0" },
+  "optionalDependencies": { "@x402/core": ">=2.21.0", "@x402/evm": ">=2.21.0", "viem": ">=2.0.0" }
+}
