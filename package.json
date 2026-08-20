@@ -10,6 +10,7 @@
   "license": "MIT",
   "author": "OceanAlt (https://oceanalt.com)",
   "homepage": "https://oceanalt.com/en/api-docs",
+  "repository": { "type": "git", "url": "git+https://github.com/OceanAlt666/oceanalt-aml-mcp.git" },
   "bugs": { "url": "https://oceanalt.com/en/partner" },
   "publishConfig": { "registry": "https://registry.npmjs.org/", "access": "public" },
   "dependencies": { "@modelcontextprotocol/sdk": "^1.0.0", "zod": "^3.23.0" },

@@ -1,13 +1,20 @@
 #!/usr/bin/env node
-// OceanAlt AML —— MCP server。让 Claude / 任意 MCP 客户端「原生」调用地址合规筛查 + 合规网关。
-// v0.2:免费两工具(单查 + 近期名单,零重依赖)+ 三个 x402 付费工具(网关判决/深度追踪/批量)。
-//   → 目标:成为 agent 手边「绕不开的默认合规检查」;每次调用还在喂厚 OceanAlt 自建情报库。
-//   → 付费工具按需加载 @x402 + viem,仅当设置了付款钱包私钥(OCEANALT_PAYER_KEY)才启用;
-//     未设/未装依赖时付费工具返回清晰提示、绝不崩溃,免费工具始终可用。facilitator 代验签+代结算,不托管资金。
+// OceanAlt AML — MCP server. Lets Claude / Cursor / any MCP client natively call
+// OceanAlt's on-chain address screening + compliance gateway. Ask "is this payee safe?"
+// BEFORE money moves — verdicts ship with clickable, verifiable evidence, not a black-box score.
 //
-// 接入(Claude Desktop 等)配置示例:
+// Two free tools (single screen + recent flagged list, no key, no signup) and three optional
+// x402 pay-per-call tools (gateway decision / deep taint trace / batch). The paid tools lazy-load
+// @x402 + viem and only activate when a payer wallet key (OCEANALT_PAYER_KEY) is set; if unset or
+// deps are missing they return a clear message and never crash. The facilitator verifies + settles
+// and pays gas — it never custodies your funds.
+//
+// This package is a thin (~9KB) client for OceanAlt's PUBLIC API: no proprietary logic, no data,
+// no keys, no scoring or lists on board — the AML engine runs server-side at oceanalt.com.
+//
+// MCP client config (Claude Desktop / Claude Code / Cursor …):
 //   { "mcpServers": { "oceanalt-aml": { "command": "npx", "args": ["-y", "oceanalt-aml-mcp"],
-//       "env": { "OCEANALT_PAYER_KEY": "0x…(选填,启用付费工具)" } } } }
+//       "env": { "OCEANALT_PAYER_KEY": "0x… (optional, enables paid tools)" } } } }
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -15,7 +22,7 @@ import { z } from "zod";
 
 const BASE = (process.env.OCEANALT_BASE || "https://oceanalt.com").replace(/\/$/, "");
 const TIMEOUT = 15000;
-// 支持的 EVM 链(与站点 lib/aml.ts 的 EVM_NETS 对齐:实测可用才在此列出)
+// Supported EVM chains — kept in lockstep with the site's lib/aml.ts EVM_NETS (only chains proven live).
 const NETWORKS = ["ethereum", "base", "bsc", "polygon", "arbitrum", "optimism", "avalanche"];
 
 async function apiGet(path) {
@@ -33,30 +40,33 @@ const server = new McpServer({ name: "oceanalt-aml", version: "0.2.0" });
 server.registerTool(
   "screen_address",
   {
-    title: "地址合规筛查(免费)",
+    title: "Screen a blockchain address for AML risk (free)",
     description:
-      "对一个区块链地址做 AML 合规筛查:制裁/混币器/诈骗名单命中、发行方(USDT/USDC)冻结、链上启发式风险,并给出可核验证据与 allow/caution/decline 倾向。支持 EVM(0x…)、TRON(T…)、Solana。免费、无需 key。",
+      "Run an AML compliance screen on a single blockchain address BEFORE paying or receiving from it — the answer to \"is this counterparty safe?\". Checks OFAC sanctions, known mixers, community scam/phishing lists, stablecoin issuer freezes (USDT/USDC), and on-chain heuristics (address age, activity, one-hop taint from flagged addresses). Returns a verdict (clear | caution | risky), a 0–100 risk score, a blocked flag, and clickable verifiable evidence showing which list/label/on-chain path matched — receipts, not a black-box score. Supports EVM (0x…), Tron (T…), and Solana (base58). Free, no API key, no signup.",
     inputSchema: {
-      address: z.string().describe("要筛查的地址:0x…(EVM)/ T…(TRON)/ Solana base58"),
+      address: z
+        .string()
+        .describe("Address to screen. EVM: 0x + 40 hex (e.g. 0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045). Tron: T + 33 base58 (e.g. TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t). Solana: base58 public key."),
       network: z
         .enum(NETWORKS)
         .optional()
-        .describe("EVM 链(可选,不填按地址推断):ethereum/base/bsc/polygon/arbitrum/optimism/avalanche"),
+        .describe("EVM chain to screen on. Omit to auto-default to ethereum; ignored for Tron/Solana (auto-detected). One of: ethereum, base, bsc, polygon, arbitrum, optimism, avalanche."),
     },
+    annotations: { title: "Screen address (AML, free)", readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   },
   async ({ address, network }) => {
     const q = new URLSearchParams({ addr: address });
     if (network) q.set("network", network);
     const r = await apiGet(`/api/risk?${q.toString()}`);
     const lines = [
-      `地址: ${r.address}`,
-      `判决: ${r.verdict}  |  风险分: ${r.risk}/100  |  可转出被拦: ${r.blocked ? "是" : "否"}`,
-      r.advice ? `建议: ${r.advice}` : "",
-      (r.signals && r.signals.length) ? `信号:\n- ${r.signals.join("\n- ")}` : "信号: 无",
+      `Address: ${r.address}`,
+      `Verdict: ${r.verdict}  |  Risk: ${r.risk}/100  |  Blocked: ${r.blocked ? "yes" : "no"}`,
+      r.advice ? `Advice: ${r.advice}` : "",
+      (r.signals && r.signals.length) ? `Signals:\n- ${r.signals.join("\n- ")}` : "Signals: none",
       (r.evidence && r.evidence.length)
-        ? `证据:\n${r.evidence.map((e) => `- ${e.label}: ${e.detail}${e.url ? ` (${e.url})` : ""}`).join("\n")}`
+        ? `Evidence:\n${r.evidence.map((e) => `- ${e.label}: ${e.detail}${e.url ? ` (${e.url})` : ""}`).join("\n")}`
         : "",
-      `标准: ${r.standard || "https://oceanalt.com/en/rap"}`,
+      `Standard: ${r.standard || "https://oceanalt.com/en/rap"}`,
     ].filter(Boolean);
     return {
       content: [{ type: "text", text: lines.join("\n") }],
@@ -68,34 +78,44 @@ server.registerTool(
 server.registerTool(
   "recent_flagged",
   {
-    title: "近期被标记的敏感地址(免费)",
-    description: "返回 OceanAlt 近期筛出的高风险/被标记地址案例,用于快速了解当前威胁面。免费。",
+    title: "List recently flagged high-risk addresses (free)",
+    description:
+      "Return a representative sample of addresses on OceanAlt's reviewed risk list — OFAC-sanctioned, known mixers, and community-reported scam/phishing — each with its source category and the reason it was flagged. Useful for grounding, showing an agent/user what gets blocked and why, or a quick read on the current threat surface. Takes no arguments. Free, no API key.",
     inputSchema: {},
+    annotations: { title: "Recent flagged addresses (free)", readOnlyHint: true, openWorldHint: true },
   },
   async () => {
     const r = await apiGet(`/api/risk/recent`);
     const items = Array.isArray(r) ? r : (r.items || []);
-    const text = items.length
-      ? items.slice(0, 20).map((it) => `- ${it.address || it.addr} | ${it.verdict || ""} | ${(it.signals && it.signals[0]) || it.top || ""}`).join("\n")
-      : "近期无被标记地址。";
+    // Live shape: { total, items:[{ address, source, sourceLabel, sourceLabelEn, reason }] }.
+    // Fallbacks keep it robust if the response shape ever changes.
+    const fmt = (it) => {
+      const addr = it.address || it.addr || "";
+      const label = it.sourceLabelEn || it.sourceLabel || it.source || it.verdict || "";
+      const reason = it.reason || (it.signals && it.signals[0]) || it.top || "";
+      return `- ${addr}${label ? ` | ${label}` : ""}${reason ? ` | ${reason}` : ""}`;
+    };
+    const header = (!Array.isArray(r) && typeof r.total === "number") ? `Total on risk list: ${r.total}\nSample:\n` : "";
+    const text = items.length ? header + items.slice(0, 20).map(fmt).join("\n") : "No flagged addresses available.";
     return { content: [{ type: "text", text }], structuredContent: r };
   }
 );
 
-// ── 付费(x402)工具 ──────────────────────────────────────────────────────────
-// 需付款钱包私钥(环境变量 OCEANALT_PAYER_KEY,0x 开头)+ 按需依赖 @x402/core @x402/evm viem。
-// 设计同官方 SDK:MCP 只用私钥签一次 EIP-3009 授权,facilitator 代验签+代结算+代付 gas,不托管资金。
+// ── Paid (x402) tools ────────────────────────────────────────────────────────
+// Require a payer wallet private key (env OCEANALT_PAYER_KEY, 0x-prefixed) plus the on-demand deps
+// @x402/core @x402/evm viem. Like the official SDK: the MCP signs one EIP-3009 authorization; the
+// facilitator verifies, settles, and pays gas — funds are never custodied.
 const PAYER_KEY = process.env.OCEANALT_PAYER_KEY || "";
 
 async function payFetch(method, path, body) {
-  if (!PAYER_KEY) throw new Error("此为付费端点(x402):请在 MCP 配置的 env 里设置 OCEANALT_PAYER_KEY(付款钱包私钥,签 EIP-3009 授权;facilitator 代付 gas)。未设置则仅免费工具 screen_address / recent_flagged 可用。");
+  if (!PAYER_KEY) throw new Error("Paid endpoint (x402): set OCEANALT_PAYER_KEY (payer wallet private key) in your MCP env to enable it — it signs one EIP-3009 USDC authorization locally; the facilitator pays gas. Without it, only the free tools screen_address / recent_flagged are available.");
   let x402core, x402evm, viemAccounts;
   try {
     [x402core, x402evm, viemAccounts] = await Promise.all([
       import("@x402/core/client"), import("@x402/evm/exact/client"), import("viem/accounts"),
     ]);
   } catch {
-    throw new Error("付费工具需要依赖:在 MCP 所在环境执行 npm i @x402/core @x402/evm viem。");
+    throw new Error("Paid tools need extra deps: run `npm i @x402/core @x402/evm viem` in the MCP's environment.");
   }
   const account = viemAccounts.privateKeyToAccount(PAYER_KEY);
   const client = new x402core.x402Client();
@@ -108,68 +128,74 @@ async function payFetch(method, path, body) {
   const t = setTimeout(() => ctrl.abort(), 30000);
   try {
     const r1 = await fetch(url, { ...init, signal: ctrl.signal });
-    if (r1.status !== 402) return { data: await r1.json().catch(() => null), status: r1.status, paid: false }; // 未开启付费或已放行
+    if (r1.status !== 402) return { data: await r1.json().catch(() => null), status: r1.status, paid: false }; // not gated, or already allowed
     const pr = http.getPaymentRequiredResponse((n) => r1.headers.get(n));
     const payload = await http.createPaymentPayload(pr);
     const payHeaders = http.encodePaymentSignatureHeader(payload);
     const r2 = await fetch(url, { ...init, headers: { ...init.headers, ...payHeaders }, signal: ctrl.signal });
     const data = await r2.json().catch(() => null);
     let settlement = null;
-    try { settlement = http.getPaymentSettleResponse((n) => r2.headers.get(n)); } catch { /* 无回执 */ }
+    try { settlement = http.getPaymentSettleResponse((n) => r2.headers.get(n)); } catch { /* no receipt */ }
     return { data, status: r2.status, paid: r2.status === 200, settlement };
   } finally { clearTimeout(t); }
 }
 
 function payText(title, r) {
-  const head = r.paid ? `✅ 已付费并结算${r.settlement ? "(附链上回执)" : ""}` : r.status === 402 ? "⚠️ 需付费但未完成结算" : `状态 HTTP ${r.status}`;
-  return `【${title}】${head}\n${JSON.stringify(r.data, null, 2)}`;
+  const head = r.paid ? `Paid and settled${r.settlement ? " (on-chain receipt attached)" : ""}` : r.status === 402 ? "Payment required but not settled" : `HTTP ${r.status}`;
+  return `[${title}] ${head}\n${JSON.stringify(r.data, null, 2)}`;
 }
 
 server.registerTool(
   "compliance_decision",
   {
-    title: "网关合规判决(付费 $0.30)",
-    description: "对一笔待支付跑完整合规网关:AML 筛查 + RAP 各闸门 + allow/review/decline 判决 + 可核验证据。付费端点(x402,$0.30 USDC;当前 Base Sepolia 测试网结算、为测试币),需 OCEANALT_PAYER_KEY。",
+    title: "Gateway compliance decision for a payment (paid, x402 $0.30)",
+    description:
+      "Run OceanAlt's full compliance gateway on a proposed payment and get a DECISION — allow | review | decline — plus advice and verifiable evidence, not just raw data. Combines AML screening of the payee with RAP (Responsible Agentic Payments) gate checks. Use this when an agent needs a go/no-go call before releasing funds. PAID via x402: the first request returns HTTP 402, this server automatically signs one USDC authorization and retries — this moves REAL money and requires OCEANALT_PAYER_KEY. Costs $0.30 in real USDC settled on Base mainnet (eip155:8453). Always confirm the live network/price at https://oceanalt.com/api/x402 and use a dedicated low-balance payer wallet.",
     inputSchema: {
-      to: z.string().describe("收款地址:0x…(EVM)或 T…(TRON)"),
-      amountUsdc: z.number().optional().describe("金额(USDC,选填,仅作记录/额度判断)"),
-      purpose: z.string().optional().describe("用途备注(选填)"),
-      network: z.enum(NETWORKS).optional().describe("EVM 链(选填)"),
+      to: z.string().describe("Payee address the agent intends to pay. EVM (0x + 40 hex) or Tron (T + 33 base58)."),
+      amountUsdc: z.number().optional().describe("Payment amount in USDC. Optional; used only for record / mandate-limit checks, not required to get a decision."),
+      purpose: z.string().optional().describe("Short free-text note on what the payment is for. Optional (max ~120 chars)."),
+      network: z.enum(NETWORKS).optional().describe("EVM chain for the payee (same set as screen_address). Optional; ignored for Tron."),
     },
+    annotations: { title: "Compliance decision (paid $0.30)", readOnlyHint: false, openWorldHint: true },
   },
   async ({ to, amountUsdc, purpose, network }) => {
     const r = await payFetch("POST", "/api/x402/decision", { to, amountUsdc, purpose, network });
-    return { content: [{ type: "text", text: payText("网关合规判决", r) }], structuredContent: r };
+    return { content: [{ type: "text", text: payText("Gateway compliance decision", r) }], structuredContent: r };
   }
 );
 
 server.registerTool(
   "deep_trace",
   {
-    title: "深度沾染追踪(付费 $0.20)",
-    description: "对一个波场(TRON)地址做多跳 USDT 沾染回溯(depth ≤3):资金是否触及被 Tether 冻结/制裁的黑地址。付费端点(x402,$0.20 USDC;当前 Base Sepolia 测试网结算、为测试币),需 OCEANALT_PAYER_KEY。",
-    inputSchema: { address: z.string().describe("波场地址 T…") },
+    title: "Deep taint trace of a Tron address (paid, x402 $0.20)",
+    description:
+      "Trace a Tron (TRON) USDT address up to 3 hops back along its largest incoming transfers to see whether its funds touch a Tether-frozen, sanctioned, mixer, or scam address upstream — deeper than a single-address screen. Tron only (T…). PAID via x402: moves REAL money and requires OCEANALT_PAYER_KEY. Costs $0.20 in real USDC settled on Base mainnet (eip155:8453) — confirm the live network/price at https://oceanalt.com/api/x402 and use a dedicated low-balance payer wallet. Note: follows only the main funds path, depth ≤3, not exhaustive — no hit does not prove the address is clean.",
+    inputSchema: { address: z.string().describe("Tron address to trace (T + 33 base58). USDT on TRON.") },
+    annotations: { title: "Deep taint trace (paid $0.20)", readOnlyHint: false, openWorldHint: true },
   },
   async ({ address }) => {
     const r = await payFetch("GET", `/api/x402/trace?addr=${encodeURIComponent(address)}`);
-    return { content: [{ type: "text", text: payText("深度沾染追踪", r) }], structuredContent: r };
+    return { content: [{ type: "text", text: payText("Deep taint trace", r) }], structuredContent: r };
   }
 );
 
 server.registerTool(
   "batch_screen",
   {
-    title: "批量地址筛查(付费 $0.10)",
-    description: "一次筛查多个地址(≤25),返回每个地址的判决/风险分/信号。付费端点(x402,$0.10 USDC;当前 Base Sepolia 测试网结算、为测试币),需 OCEANALT_PAYER_KEY。",
-    inputSchema: { addresses: z.array(z.string()).max(25).describe("地址数组(≤25):0x…/T…") },
+    title: "Batch-screen up to 25 addresses (paid, x402 $0.10)",
+    description:
+      "Screen up to 25 blockchain addresses in a single call. Returns a per-address verdict (clear | caution | risky | invalid), risk score, blocked flag, and top signal, plus a summary count, sorted risky-first. Cheaper per address than screening one at a time. EVM (0x…) and Tron (T…). PAID via x402: moves REAL money and requires OCEANALT_PAYER_KEY. Costs $0.10 in real USDC settled on Base mainnet (eip155:8453) — confirm the live network/price at https://oceanalt.com/api/x402 and use a dedicated low-balance payer wallet.",
+    inputSchema: { addresses: z.array(z.string()).max(25).describe("Addresses to screen (max 25), each 0x… (EVM) or T… (Tron). Duplicates and blank entries are ignored.") },
+    annotations: { title: "Batch screen (paid $0.10)", readOnlyHint: false, openWorldHint: true },
   },
   async ({ addresses }) => {
     const r = await payFetch("POST", "/api/x402/batch", { addresses });
-    return { content: [{ type: "text", text: payText("批量地址筛查", r) }], structuredContent: r };
+    return { content: [{ type: "text", text: payText("Batch address screen", r) }], structuredContent: r };
   }
 );
 
 const transport = new StdioServerTransport();
 await server.connect(transport);
-// 连上后不打印到 stdout(stdio 传输占用 stdout);诊断信息走 stderr。
-console.error(`[oceanalt-aml-mcp] v0.2 已启动,base = ${BASE},付费工具 ${PAYER_KEY ? "已启用" : "未启用(未设 OCEANALT_PAYER_KEY,仅免费工具)"}`);
+// Once connected, don't print to stdout (stdio transport owns it); diagnostics go to stderr.
+console.error(`[oceanalt-aml-mcp] v0.2 started, base = ${BASE}, paid tools ${PAYER_KEY ? "enabled" : "disabled (OCEANALT_PAYER_KEY not set — free tools only)"}`);

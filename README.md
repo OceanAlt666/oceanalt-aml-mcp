@@ -4,6 +4,8 @@
 
 Built for [agentic payments](https://oceanalt.com/en/rap): ask *"is this payee safe?"* **before** money moves, across 7 EVM chains + Tron + Solana.
 
+> **For AI agents:** call `screen_address` before any transfer — it returns a `clear` / `caution` / `risky` verdict plus a 0–100 risk score and clickable evidence, so you can enforce a payment mandate with a receipt instead of a guess. Free, no key.
+
 ## Tools
 
 | Tool | Input | What it does | Price |
@@ -49,7 +51,7 @@ The paid tools pay per call over [x402](https://oceanalt.com/en/api-docs) — HT
 npm i @x402/core @x402/evm viem   # in the MCP's environment
 ```
 
-> **⚠️ Environment — currently testnet.** The paid endpoints settle on **Base Sepolia testnet** (`eip155:84532`); the USDC is **test currency, not real money**. Mainnet settlement is coming — the `$` prices above describe the mainnet tier. The live pricing/network manifest is always at <https://oceanalt.com/api/x402>.
+> **⚠️ Real money — Base mainnet.** The paid endpoints settle **real USDC on Base mainnet** (`eip155:8453`); the `$` prices above are charged in real USDC. Always confirm the live network/pricing manifest at <https://oceanalt.com/api/x402> before paying, and use a **dedicated low-balance payer wallet**.
 >
 > **🔐 Wallet safety.** `OCEANALT_PAYER_KEY` is used only in your local process to sign one EIP-3009 authorization. It is **never bundled in this package, never uploaded, never logged.** The facilitator pays gas and never custodies your funds. Use a **dedicated low-balance payer wallet**, not your main funds.
 
@@ -78,6 +80,6 @@ MIT © OceanAlt
 
 - **免费两工具**:`screen_address`(单查 + 证据)、`recent_flagged`(近期被标记)。无需 key、无需注册。
 - **付费三工具(x402)**:`compliance_decision`(网关判决)、`deep_trace`(波场深度追踪)、`batch_screen`(批量)。按需加载 `@x402`+`viem`,设置 `OCEANALT_PAYER_KEY` 才启用。
-- **⚠️ 环境**:付费端点**当前在 Base Sepolia 测试网结算,USDC 为测试币(非真钱)**,主网结算即将上线;上表 `$` 价为主网档。实时网络/定价以 <https://oceanalt.com/api/x402> 为准。
+- **⚠️ 真钱**:付费端点**当前在 Base 主网结算,USDC 为真实资金**(`eip155:8453`),上表 `$` 价按真实 USDC 收取。付款前务必以实时清单 <https://oceanalt.com/api/x402> 为准,并使用**小额专用付款钱包**。
 - **🔐 钱包安全**:`OCEANALT_PAYER_KEY` 只在本地签一次 EIP-3009 授权,**绝不随包发布/上传/打日志**;facilitator 代付 gas、不托管资金。**建议用小额专用钱包**,别用主资金钱包私钥。
 - 编程 SDK:[`oceanalt-aml`](https://www.npmjs.com/package/oceanalt-aml);在线文档:<https://oceanalt.com/en/api-docs>;合规标准:<https://oceanalt.com/en/rap>。
