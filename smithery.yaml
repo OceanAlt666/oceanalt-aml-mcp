@@ -1,0 +1,25 @@
+# Smithery configuration file: https://smithery.ai/docs/config#smitheryyaml
+
+startCommand:
+  type: stdio
+  configSchema:
+    # Free tools need no configuration at all. Optional settings below.
+    type: object
+    properties:
+      oceanaltPayerKey:
+        type: string
+        description: "Optional. EVM private key used ONLY to pay for the paid x402 tools (compliance_decision, deep_trace, batch_screen) in USDC on Base. Leave empty to use the free tools (screen_address, screen_endpoint, payee_decide, payment_decision, check_calldata_intent, verify_payment_requirements, recent_flagged and more) — they need no key and no signup."
+      oceanaltBase:
+        type: string
+        description: "Optional. Override the API base URL (default https://oceanalt.com)."
+  commandFunction:
+    # A function that produces the CLI command to start the MCP on stdio.
+    |-
+    (config) => ({
+      command: 'node',
+      args: ['server.mjs'],
+      env: {
+        ...(config.oceanaltPayerKey ? { OCEANALT_PAYER_KEY: config.oceanaltPayerKey } : {}),
+        ...(config.oceanaltBase ? { OCEANALT_BASE: config.oceanaltBase } : {})
+      }
+    })
