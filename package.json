@@ -1,0 +1,60 @@
+{
+  "name": "oceanalt-aml-mcp",
+  "version": "0.6.0",
+  "mcpName": "com.oceanalt/aml",
+  "description": "Should this payment go to this address? MCP server for pre-settlement payment compliance: screen a payee address for OFAC sanctions, mixers, scam and hack lists and on-chain risk across 7 EVM chains, Tron and Solana — with click-through evidence, not a black-box score. Free tools need no API key. Paid x402 tools add gateway verdicts, taint tracing and batch screening.",
+  "type": "module",
+  "bin": {
+    "oceanalt-aml-mcp": "server.mjs"
+  },
+  "main": "server.mjs",
+  "files": [
+    "server.mjs",
+    "README.md"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "aml",
+    "compliance",
+    "sanctions",
+    "ofac",
+    "payee-screening",
+    "address-risk",
+    "agent-payments",
+    "agentic-payments",
+    "x402",
+    "stablecoin",
+    "usdc",
+    "crypto",
+    "web3",
+    "claude",
+    "ai-agent",
+    "pre-settlement",
+    "wallet-screening",
+    "oceanalt"
+  ],
+  "license": "MIT",
+  "author": "OceanAlt (https://oceanalt.com)",
+  "homepage": "https://oceanalt.com/en/api-docs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OceanAlt666/oceanalt-aml-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/OceanAlt666/oceanalt-aml-mcp/issues"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org/",
+    "access": "public"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "zod": "^3.23.0"
+  },
+  "optionalDependencies": {
+    "@x402/core": ">=2.21.0",
+    "@x402/evm": ">=2.21.0",
+    "viem": ">=2.0.0"
+  }
+}
