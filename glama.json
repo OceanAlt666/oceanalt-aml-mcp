@@ -1,0 +1,25 @@
+{
+  "$schema": "https://glama.ai/mcp/schemas/server.json",
+  "maintainers": ["OceanAlt666"],
+  "displayName": "OceanAlt AML / Agent Payment Compliance",
+  "description": "Native AML compliance for AI agents. Screen any blockchain address (EVM / Tron / Solana) for sanctions, mixers, scam lists, issuer freezes, and on-chain risk before money moves — with verifiable evidence, not a black-box score. Free screening tools need no key; optional x402 pay-per-call tools add full gateway verdicts, deep taint tracing, and batch screening.",
+  "categories": ["security", "finance"],
+  "configurationSchema": {
+    "environmentVariables": [
+      {
+        "name": "OCEANALT_BASE",
+        "description": "Backend base URL for the OceanAlt API. Override only for self-hosting or staging.",
+        "type": "string",
+        "required": false,
+        "default": "https://oceanalt.com"
+      },
+      {
+        "name": "OCEANALT_PAYER_KEY",
+        "description": "Optional payer wallet private key (0x…). When set, unlocks the x402 pay-per-call tools (compliance_decision, deep_trace, batch_screen); used only locally to sign one EIP-3009 USDC authorization — never uploaded or logged. Leave unset to run the free tools only. Use a dedicated low-balance wallet.",
+        "type": "string",
+        "required": false,
+        "sensitive": true
+      }
+    ]
+  }
+}
