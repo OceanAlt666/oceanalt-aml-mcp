@@ -1,6 +1,6 @@
 {
   "name": "oceanalt-aml-mcp",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "mcpName": "com.oceanalt/aml",
   "description": "Should this payment go to this address? MCP server for pre-settlement payment compliance: screen a payee address for OFAC sanctions, mixers, scam and hack lists and on-chain risk across 7 EVM chains, Tron and Solana — with click-through evidence, not a black-box score. Free tools need no API key. Paid x402 tools add gateway verdicts, taint tracing and batch screening.",
   "type": "module",

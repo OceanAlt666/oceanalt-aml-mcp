@@ -62,7 +62,7 @@ server.registerTool(
   {
     title: "Screen a blockchain address for AML risk (free)",
     description:
-      "Run an AML compliance screen on a single blockchain address BEFORE paying or receiving from it — the answer to \"is this counterparty safe?\". Checks OFAC sanctions, known mixers, community scam/phishing lists, stablecoin issuer freezes (USDT/USDC), and on-chain heuristics (address age, activity, one-hop taint from flagged addresses). Returns a verdict (clear | caution | risky), a 0–100 risk score, a blocked flag, and clickable verifiable evidence showing which list/label/on-chain path matched — receipts, not a black-box score. Supports EVM (0x…), Tron (T…), and Solana (base58). Free, no API key, no signup.",
+      "Run an AML compliance screen on a single blockchain address BEFORE paying or receiving from it. Checks OFAC sanctions, known mixers, community scam/phishing lists, stablecoin issuer freezes (USDT on Tron, USDC on EVM chains), and on-chain heuristics (address age, activity, one-hop taint from flagged addresses) where the chain supports them. Returns a verdict (clear | caution | risky), a 0–100 risk score, a blocked flag, and clickable verifiable evidence showing which list/label/on-chain path matched — receipts, not a black-box score. A clear verdict means nothing was found in the data OceanAlt holds; it is not a statement that the address is safe. Screening depth varies by chain (see coverage.chains at https://oceanalt.com/.well-known/agent-capabilities). Supports EVM (0x…), Tron (T…), and Solana (base58). Free, no API key, no signup.",
     inputSchema: {
       address: z
         .string()
@@ -333,6 +333,19 @@ server.registerTool(
 // @x402/core @x402/evm viem. Like the official SDK: the MCP signs one EIP-3009 authorization; the
 // facilitator verifies, settles, and pays gas — funds are never custodied.
 const PAYER_KEY = process.env.OCEANALT_PAYER_KEY || "";
+// Decision credit pack (since 0.7.0): buy once at POST /api/x402/credits ($0.05 = 100 decisions), then set
+// OCEANALT_CREDIT_TOKEN. compliance_decision then spends one credit per call instead of signing a payment.
+const CREDIT_TOKEN = process.env.OCEANALT_CREDIT_TOKEN || "";
+
+async function creditFetch(path, body) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 30000);
+  try {
+    const r = await fetch(BASE + path, { method: "POST", headers: { "content-type": "application/json", "x-oceanalt-credit": CREDIT_TOKEN }, body: JSON.stringify(body), signal: ctrl.signal });
+    const data = await r.json().catch(() => null);
+    return { data, status: r.status, paid: r.status === 200, credit: true, credits_remaining: r.headers.get("x-oceanalt-credits-remaining") };
+  } finally { clearTimeout(t); }
+}
 
 async function payFetch(method, path, body) {
   if (!PAYER_KEY) throw new Error("Paid endpoint (x402): set OCEANALT_PAYER_KEY (payer wallet private key) in your MCP env to enable it — it signs one EIP-3009 USDC authorization locally; the facilitator pays gas. Without it, only the free tools screen_address / recent_flagged are available.");
@@ -368,6 +381,7 @@ async function payFetch(method, path, body) {
 }
 
 function payText(title, r) {
+  if (r.credit) return `[${title}] ${r.paid ? `Used 1 credit (${r.credits_remaining} left)` : `Credit not accepted (HTTP ${r.status})`}\n${JSON.stringify(r.data, null, 2)}`;
   const head = r.paid ? `Paid and settled${r.settlement ? " (on-chain receipt attached)" : ""}` : r.status === 402 ? "Payment required but not settled" : `HTTP ${r.status}`;
   return `[${title}] ${head}\n${JSON.stringify(r.data, null, 2)}`;
 }
@@ -375,19 +389,21 @@ function payText(title, r) {
 server.registerTool(
   "compliance_decision",
   {
-    title: "Gateway compliance decision for a payment (paid, x402 $0.30)",
+    title: "Gateway compliance decision for a payment (paid, x402 $0.002 or 1 credit)",
     description:
-      "Run OceanAlt's full compliance gateway on a proposed payment and get a DECISION — allow | review | decline — plus advice and verifiable evidence, not just raw data. Combines AML screening of the payee with RAP (Responsible Agentic Payments) gate checks. Use this when an agent needs a go/no-go call before releasing funds. PAID via x402: the first request returns HTTP 402, this server automatically signs one USDC authorization and retries — this moves REAL money and requires OCEANALT_PAYER_KEY. Costs $0.30 in real USDC settled on Base mainnet (eip155:8453). Always confirm the live network/price at https://oceanalt.com/api/x402 and use a dedicated low-balance payer wallet.",
+      "Run OceanAlt's full compliance gateway on a proposed payment and get a DECISION — allow | review | decline — plus advice and verifiable evidence, not just raw data. Combines AML screening of the payee with RAP (Responsible Agentic Payments) gate checks. Use this when an agent needs a go/no-go call before releasing funds. PAID via x402: the first request returns HTTP 402, this server automatically signs one USDC authorization and retries — this moves REAL money and requires OCEANALT_PAYER_KEY. Costs $0.002 in real USDC settled on Base mainnet (eip155:8453). Alternatively set OCEANALT_CREDIT_TOKEN (a credit pack bought at POST https://oceanalt.com/api/x402/credits: $0.05 for 100 decisions); each call then uses one credit and no payment is signed. Always confirm the live network/price at https://oceanalt.com/api/x402 and use a dedicated low-balance payer wallet.",
     inputSchema: {
       to: z.string().describe("Payee address the agent intends to pay. EVM (0x + 40 hex) or Tron (T + 33 base58)."),
       amountUsdc: z.number().optional().describe("Payment amount in USDC. Optional; used only for record / mandate-limit checks, not required to get a decision."),
       purpose: z.string().optional().describe("Short free-text note on what the payment is for. Optional (max ~120 chars)."),
       network: z.enum(NETWORKS).optional().describe("EVM chain for the payee (same set as screen_address). Optional; ignored for Tron."),
     },
-    annotations: { title: "Compliance decision (paid $0.30)", readOnlyHint: false, openWorldHint: true },
+    annotations: { title: "Compliance decision (paid $0.002)", readOnlyHint: false, openWorldHint: true },
   },
   async ({ to, amountUsdc, purpose, network }) => {
-    const r = await payFetch("POST", "/api/x402/decision", { to, amountUsdc, purpose, network });
+    const r = CREDIT_TOKEN
+      ? await creditFetch("/api/x402/decision", { to, amountUsdc, purpose, network })
+      : await payFetch("POST", "/api/x402/decision", { to, amountUsdc, purpose, network });
     return { content: [{ type: "text", text: payText("Gateway compliance decision", r) }], structuredContent: r };
   }
 );
@@ -395,11 +411,11 @@ server.registerTool(
 server.registerTool(
   "deep_trace",
   {
-    title: "Deep taint trace of a Tron address (paid, x402 $0.20)",
+    title: "Deep taint trace of a Tron address (paid, x402 $0.01)",
     description:
-      "Trace a Tron (TRON) USDT address up to 3 hops back along its largest incoming transfers to see whether its funds touch a Tether-frozen, sanctioned, mixer, or scam address upstream — deeper than a single-address screen. Tron only (T…). PAID via x402: moves REAL money and requires OCEANALT_PAYER_KEY. Costs $0.20 in real USDC settled on Base mainnet (eip155:8453) — confirm the live network/price at https://oceanalt.com/api/x402 and use a dedicated low-balance payer wallet. Note: follows only the main funds path, depth ≤3, not exhaustive — no hit does not prove the address is clean.",
+      "Trace a Tron (TRON) USDT address up to 3 hops back along its largest incoming transfers to see whether its funds touch a Tether-frozen, sanctioned, mixer, or scam address upstream — deeper than a single-address screen. Tron only (T…). PAID via x402: moves REAL money and requires OCEANALT_PAYER_KEY. Costs $0.01 in real USDC settled on Base mainnet (eip155:8453) — confirm the live network/price at https://oceanalt.com/api/x402 and use a dedicated low-balance payer wallet. Note: follows only the main funds path, depth ≤3, not exhaustive — no hit does not prove the address is clean.",
     inputSchema: { address: z.string().describe("Tron address to trace (T + 33 base58). USDT on TRON.") },
-    annotations: { title: "Deep taint trace (paid $0.20)", readOnlyHint: false, openWorldHint: true },
+    annotations: { title: "Deep taint trace (paid $0.01)", readOnlyHint: false, openWorldHint: true },
   },
   async ({ address }) => {
     const r = await payFetch("GET", `/api/x402/trace?addr=${encodeURIComponent(address)}`);
@@ -410,11 +426,11 @@ server.registerTool(
 server.registerTool(
   "batch_screen",
   {
-    title: "Batch-screen up to 25 addresses (paid, x402 $0.10)",
+    title: "Batch-screen up to 25 addresses (paid, x402 $0.01)",
     description:
-      "Screen up to 25 blockchain addresses in a single call. Returns a per-address verdict (clear | caution | risky | invalid), risk score, blocked flag, and top signal, plus a summary count, sorted risky-first. Cheaper per address than screening one at a time. EVM (0x…) and Tron (T…). PAID via x402: moves REAL money and requires OCEANALT_PAYER_KEY. Costs $0.10 in real USDC settled on Base mainnet (eip155:8453) — confirm the live network/price at https://oceanalt.com/api/x402 and use a dedicated low-balance payer wallet.",
+      "Screen up to 25 blockchain addresses in a single call. Returns a per-address verdict (clear | caution | risky | invalid), risk score, blocked flag, and top signal, plus a summary count, sorted risky-first. Cheaper per address than screening one at a time. EVM (0x…) and Tron (T…). PAID via x402: moves REAL money and requires OCEANALT_PAYER_KEY. Costs $0.01 in real USDC settled on Base mainnet (eip155:8453) — confirm the live network/price at https://oceanalt.com/api/x402 and use a dedicated low-balance payer wallet.",
     inputSchema: { addresses: z.array(z.string()).max(25).describe("Addresses to screen (max 25), each 0x… (EVM) or T… (Tron). Duplicates and blank entries are ignored.") },
-    annotations: { title: "Batch screen (paid $0.10)", readOnlyHint: false, openWorldHint: true },
+    annotations: { title: "Batch screen (paid $0.01)", readOnlyHint: false, openWorldHint: true },
   },
   async ({ addresses }) => {
     const r = await payFetch("POST", "/api/x402/batch", { addresses });
@@ -425,4 +441,4 @@ server.registerTool(
 const transport = new StdioServerTransport();
 await server.connect(transport);
 // Once connected, don't print to stdout (stdio transport owns it); diagnostics go to stderr.
-console.error(`[oceanalt-aml-mcp] v${PKG_VERSION} started, base = ${BASE}, paid tools ${PAYER_KEY ? "enabled" : "disabled (OCEANALT_PAYER_KEY not set — free tools only)"}`);
+console.error(`[oceanalt-aml-mcp] v${PKG_VERSION} started, base = ${BASE}, paid tools ${PAYER_KEY ? "enabled" : "disabled (OCEANALT_PAYER_KEY not set — free tools only)"}${CREDIT_TOKEN ? ", credit token set for compliance_decision" : ""}`);
