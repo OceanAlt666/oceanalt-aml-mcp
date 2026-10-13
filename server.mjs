@@ -3,7 +3,7 @@
 // OceanAlt's on-chain address screening + compliance gateway. Ask "is this payee safe?"
 // BEFORE money moves — verdicts ship with clickable, verifiable evidence, not a black-box score.
 //
-// Free tools (screen / decide / payee decision / control baseline / agent identity / recent flagged /
+// Free tools (screen address / screen endpoint / decide / payee decision / control baseline (list, lookup, attest) / agent identity / recent flagged /
 // intent check incl. Solana / signed-402 verification / evidence bundle — no key, no signup) and three optional
 // x402 pay-per-call tools (gateway decision / deep taint trace / batch). The paid tools lazy-load
 // @x402 + viem and only activate when a payer wallet key (OCEANALT_PAYER_KEY) is set; if unset or
@@ -25,7 +25,7 @@ import { readFileSync } from "node:fs";
 const BASE = (process.env.OCEANALT_BASE || "https://oceanalt.com").replace(/\/$/, "");
 const TIMEOUT = 15000;
 // Supported EVM chains — kept in lockstep with the site's lib/aml.ts EVM_NETS (only chains proven live).
-const NETWORKS = ["ethereum", "base", "bsc", "polygon", "arbitrum", "optimism", "avalanche"];
+const NETWORKS = ["ethereum", "base", "bsc", "polygon", "arbitrum", "optimism", "avalanche", "arc"];
 
 async function apiPost(path, body) {
   const ctrl = new AbortController();
@@ -47,10 +47,10 @@ async function apiGet(path) {
   } finally { clearTimeout(t); }
 }
 
-// 版本号从 package.json 读,不写死。
-// 2026-09-08:这里曾经写死 "0.4.0",而启动日志写死 "v0.3",package.json 又是第三个数 ——
-// 三处各说各话,发布时还漏过一次版本号(commit 52f351c)。单一事实源之后不会再漂。
-// npm 打包永远会带上 package.json,所以正常情况读得到;万一读不到也不能让 server 起不来。
+// Read the version from package.json instead of hard-coding it.
+// 2026-09-08: this used to say "0.4.0" while the startup log said "v0.3" and package.json a third number,
+// and one release went out with the wrong version (commit 52f351c). One source of truth stops the drift.
+// npm always packs package.json, so this normally works; if it cannot be read the server must still start.
 const PKG_VERSION = (() => {
   try { return JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")).version; }
   catch { return "0.0.0-unknown"; }
@@ -328,12 +328,84 @@ server.registerTool(
   }
 );
 
+// 0.7.2 (2026-10-11): the remote endpoint (POST https://oceanalt.com/api/mcp) and llms.txt already listed these three;
+// this package did not, so a client on npx saw 12 tools where the docs promised 15.
+server.registerTool(
+  "screen_endpoint",
+  {
+    title: "Screen a payment endpoint for phishing (free)",
+    description:
+      "Screen a payment ENDPOINT (URL or domain) before calling it — the half that address screening cannot answer. In x402 the agent discovers a URL first, receives a 402, and only then learns where to pay: if that endpoint is spoofed, the payee address it hands back is freshly generated and appears on no sanctions list. Checks the hostname and its parent domains against public phishing-domain lists plus hostname shape signals. Returns clear | caution | risky | unknown with language-independent signal_keys. clear means no match was found, NOT that the endpoint is safe. Use together with screen_address. Free, no API key.",
+    inputSchema: {
+      url: z.string().describe("Full URL or bare domain of the payment endpoint, e.g. https://pay.example.com/x402 or pay.example.com"),
+    },
+    annotations: { title: "Screen payment endpoint (free)", readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+  },
+  async ({ url }) => {
+    const r = await apiGet(`/api/endpoint?url=${encodeURIComponent(url)}`);
+    const text = [
+      `Endpoint: ${r.host || url}`,
+      `Verdict: ${r.verdict}  |  Risk: ${r.risk ?? "n/a"}/100  |  reason_code: ${r.reason_code || "?"}`,
+      r.signals?.length ? `Signals:\n- ${r.signals.join("\n- ")}` : "Signals: none",
+      r.note ? `Note: ${r.note}` : "",
+      "Companion: call screen_address on the payee address too — the two answer different questions.",
+    ].filter(Boolean).join("\n");
+    return { content: [{ type: "text", text }], structuredContent: r };
+  }
+);
+
+server.registerTool(
+  "baseline_controls",
+  {
+    title: "List the control-baseline questions (free)",
+    description:
+      "Fetch the OceanAlt Agent Control Baseline: the controls an agent operator is expected to run before it is allowed to move money, each answerable yes or no. Call this before attest_control_baseline so you file against real control ids. Each control says which layer enforces it.",
+    inputSchema: {},
+    annotations: { title: "Get the control baseline list (free)", readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+  },
+  async () => {
+    const r = await apiGet("/api/baseline");
+    const lines = (r.controls || []).map((c) => `${c.id}  [${c.obligation}]  ${c.title}  — enforced: ${c.enforcement}`);
+    const text = `OceanAlt Agent Control Baseline — ${r.counts?.total ?? lines.length} controls, ${r.counts?.mandatory ?? "?"} mandatory.\n\n${lines.join("\n")}\n\nFile with attest_control_baseline. Gaps are allowed: answer false and describe the plan.`;
+    return { content: [{ type: "text", text }], structuredContent: r };
+  }
+);
+
+server.registerTool(
+  "attest_control_baseline",
+  {
+    title: "File your own control-baseline attestation (free)",
+    description:
+      "File your operator's control-baseline attestation — the counterpart to counterparty_control_baseline. That tool asks what controls the OTHER side runs; this one publishes what YOUR side runs, so payers can see it before settling with you. No account, no key, one call. Gaps are allowed: answer false where a control is not in place and describe the plan in gapPlan. Get the control ids from baseline_controls first. Only file for a party you are actually authorised to speak for.",
+    inputSchema: {
+      entity: z.string().describe("The accountable party's legal or commonly-used name. This is who the attestation is about, not your agent's name."),
+      answers: z.record(z.string(), z.boolean()).describe("Map of control id to boolean, e.g. {\"ACB-1.1\": true, \"ACB-2.1\": false}. Ids come from baseline_controls."),
+      gapPlan: z.string().optional().describe("For controls answered false: how and when you plan to close them."),
+      agentId: z.string().optional().describe("If this party already has an agent registered with OceanAlt, link the attestation to it."),
+      contact: z.string().optional().describe("Contact for follow-up. Not published."),
+    },
+    annotations: { title: "File a control-baseline attestation (free)", readOnlyHint: false, idempotentHint: true, openWorldHint: true },
+  },
+  async ({ entity, answers, gapPlan, agentId, contact }) => {
+    const r = await apiPost("/api/baseline/attest", { entity, answers, gapPlan, agentId, contact });
+    if (r.error) return { content: [{ type: "text", text: `Could not file: ${r.error}${r.hint ? "\n" + r.hint : ""}` }], isError: true };
+    const text = [
+      `Filed for: ${entity}`,
+      `Status: ${r.status}  (mandatory ${r.mandatory_met})`,
+      r.missing_mandatory?.length ? `Declared gaps: ${r.missing_mandatory.join(", ")}` : "No declared gaps.",
+      r.lookup_url ? `Now visible to payers: ${r.lookup_url}` : "",
+      "A gaps status is not a failure: it is a disclosed shape, which is what a payer can act on.",
+    ].filter(Boolean).join("\n");
+    return { content: [{ type: "text", text }], structuredContent: r };
+  }
+);
+
 // ── Paid (x402) tools ────────────────────────────────────────────────────────
 // Require a payer wallet private key (env OCEANALT_PAYER_KEY, 0x-prefixed) plus the on-demand deps
 // @x402/core @x402/evm viem. Like the official SDK: the MCP signs one EIP-3009 authorization; the
 // facilitator verifies, settles, and pays gas — funds are never custodied.
 const PAYER_KEY = process.env.OCEANALT_PAYER_KEY || "";
-// Decision credit pack (since 0.7.0): buy once at POST /api/x402/credits ($0.05 = 100 decisions), then set
+// Decision credit pack (since 0.7.0): buy once at POST /api/x402/credits ($0.10 = 100 decisions), then set
 // OCEANALT_CREDIT_TOKEN. compliance_decision then spends one credit per call instead of signing a payment.
 const CREDIT_TOKEN = process.env.OCEANALT_CREDIT_TOKEN || "";
 
@@ -391,7 +463,7 @@ server.registerTool(
   {
     title: "Gateway compliance decision for a payment (paid, x402 $0.002 or 1 credit)",
     description:
-      "Run OceanAlt's full compliance gateway on a proposed payment and get a DECISION — allow | review | decline — plus advice and verifiable evidence, not just raw data. Combines AML screening of the payee with RAP (Responsible Agentic Payments) gate checks. Use this when an agent needs a go/no-go call before releasing funds. PAID via x402: the first request returns HTTP 402, this server automatically signs one USDC authorization and retries — this moves REAL money and requires OCEANALT_PAYER_KEY. Costs $0.002 in real USDC settled on Base mainnet (eip155:8453). Alternatively set OCEANALT_CREDIT_TOKEN (a credit pack bought at POST https://oceanalt.com/api/x402/credits: $0.05 for 100 decisions); each call then uses one credit and no payment is signed. Always confirm the live network/price at https://oceanalt.com/api/x402 and use a dedicated low-balance payer wallet.",
+      "Run OceanAlt's full compliance gateway on a proposed payment and get a DECISION — allow | review | decline — plus advice and verifiable evidence, not just raw data. Combines AML screening of the payee with RAP (Responsible Agentic Payments) gate checks. Use this when an agent needs a go/no-go call before releasing funds. PAID via x402: the first request returns HTTP 402, this server automatically signs one USDC authorization and retries — this moves REAL money and requires OCEANALT_PAYER_KEY. Costs $0.002 in real USDC settled on Base mainnet (eip155:8453). Alternatively set OCEANALT_CREDIT_TOKEN (a credit pack bought at POST https://oceanalt.com/api/x402/credits: $0.10 for 100 decisions); each call then uses one credit and no payment is signed. Always confirm the live network/price at https://oceanalt.com/api/x402 and use a dedicated low-balance payer wallet.",
     inputSchema: {
       to: z.string().describe("Payee address the agent intends to pay. EVM (0x + 40 hex) or Tron (T + 33 base58)."),
       amountUsdc: z.number().optional().describe("Payment amount in USDC. Optional; used only for record / mandate-limit checks, not required to get a decision."),
