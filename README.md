@@ -2,7 +2,7 @@
 
 **Native AML compliance for AI agents.** An [MCP](https://modelcontextprotocol.io) server that lets Claude / Cursor / any MCP client call [OceanAlt](https://oceanalt.com)'s on-chain address screening and compliance gateway. Receipts, not a black-box score — every verdict ships with verifiable evidence you can click through.
 
-Built for [agentic payments](https://oceanalt.com/en/rap): ask *"is this payee safe?"* **before** money moves, across 7 EVM chains + Tron + Solana.
+Built for [agentic payments](https://oceanalt.com/en/rap): ask *"should this payment proceed?"* **before** money moves, across 8 EVM chains + Tron + Solana.
 
 > **For AI agents:** call `screen_address` before any transfer — it returns a `clear` / `caution` / `risky` verdict plus a 0–100 risk score and clickable evidence, so you can enforce a payment mandate with a receipt instead of a guess. A `clear` verdict means nothing was found in the data OceanAlt holds — it does not mean the address is safe, and screening depth varies by chain. Free, no key.
 
@@ -21,6 +21,7 @@ Built for [agentic payments](https://oceanalt.com/en/rap): ask *"is this payee s
 | `screen_endpoint` | `url` | Is this payment URL or domain on a phishing list, or shaped like one? The half address screening cannot answer | Free |
 | `baseline_controls` | — | The Agent Control Baseline: controls an operator should run before its agent moves money | Free |
 | `attest_control_baseline` | `entity`, `answers`, `gapPlan?` | File your own side's control-baseline attestation so payers can look it up | Free |
+| `payee_decide` | `payee` (registry id), `payer?`, `amountUsdc?`, `purpose?` | The receiving side's check before settlement: accept / decline / hold_request_info / not_ready, with reason codes, the fields to request, evidence and a signature | Free |
 | `compliance_decision` | `to`, `amountUsdc?`, `purpose?`, `network?` | Full gateway verdict (allow / review / decline) + evidence | $0.002, or 1 credit |
 | `deep_trace` | `address` (T…) | Tron multi-hop USDT taint trace (depth ≤3) | $0.01 |
 | `batch_screen` | `addresses[]` (≤25) | Batch screening (up to 25 addresses) | $0.01 |
