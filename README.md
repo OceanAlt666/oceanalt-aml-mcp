@@ -19,6 +19,7 @@ Built for [agentic payments](https://oceanalt.com/en/rap): ask *"should this pay
 | `verify_payment_requirements` | `payment_required` (decoded 402 JSON or raw base64), `expect?` | Was this x402 402 response tampered with in transit? Ed25519 check of the seller's signed requirements → ok / digest_mismatch / … | Free |
 | `evidence_bundle` | `address`, `network?` | One signed bundle of everything public OceanAlt can say about an address (screening + evidence + freshness, profile signals, one-hop relations, receipt stats); witness, not plaintiff | Free |
 | `screen_endpoint` | `url` | Is this payment URL or domain on a phishing list, or shaped like one? The half address screening cannot answer | Free |
+| `check_payment_request` | `from`, `headers`, `body`, `pay_to` … | An email, invoice or message asks you to pay: is the sender spoofed, are the links phishing, is the payee listed or changed, is there pressure or an instruction aimed at an AI? | Free |
 | `baseline_controls` | — | The Agent Control Baseline: controls an operator should run before its agent moves money | Free |
 | `attest_control_baseline` | `entity`, `answers`, `gapPlan?` | File your own side's control-baseline attestation so payers can look it up | Free |
 | `payee_decide` | `payee` (registry id), `payer?`, `amountUsdc?`, `purpose?` | The receiving side's check before settlement: accept / decline / hold_request_info / not_ready, with reason codes, the fields to request, evidence and a signature | Free |
@@ -102,9 +103,9 @@ MIT © OceanAlt
 
 ## 中文
 
-让 **Claude / Cursor / 任意 MCP 客户端**原生调用 OceanAlt 的链上地址合规筛查 + 合规网关。给收据,不给黑箱分:每条判决都带**可点开核验的证据**。覆盖 7 条 EVM 链 + 波场 TRON + Solana,付款前先问一句「这个收款方安不安全」。
+让 **Claude / Cursor / 任意 MCP 客户端**原生调用 OceanAlt 的链上地址合规筛查 + 合规网关。给收据,不给黑箱分:每条判决都带**可点开核验的证据**。覆盖 8 条 EVM 链 + 波场 TRON + Solana,付款前先问一句「这个收款方安不安全」。
 
-- **免费工具**:`payment_decision`(付款前调一次 → allow/review/decline + 证据 + 可核验结算凭证)、`screen_address`(单查 + 证据)、`payee_decide`(收款方三态决策)、`counterparty_control_baseline` / `resolve_agent_identity`(对方的控制基线与责任链)、`recent_flagged`(近期被标记)、`check_calldata_intent`(盲签检查,EVM calldata 或整笔 Solana 交易)、`screen_endpoint`(付款网址是否钓鱼)、`baseline_controls` / `attest_control_baseline`(控制基线清单与自证)、`verify_payment_requirements`(402 应答验签)、`evidence_bundle`(签名证据包)。无需 key、无需注册。
+- **免费工具**:`payment_decision`(付款前调一次 → allow/review/decline + 证据 + 可核验结算凭证)、`screen_address`(单查 + 证据)、`payee_decide`(收款方三态决策)、`counterparty_control_baseline` / `resolve_agent_identity`(对方的控制基线与责任链)、`recent_flagged`(近期被标记)、`check_calldata_intent`(盲签检查,EVM calldata 或整笔 Solana 交易)、`screen_endpoint`(付款网址是否钓鱼)、`check_payment_request`(收到让你付钱的邮件、发票或消息时，查发件人真假、钓鱼链接、收款地址、催付话术和写给 AI 的指令)、`baseline_controls` / `attest_control_baseline`(控制基线清单与自证)、`verify_payment_requirements`(402 应答验签)、`evidence_bundle`(签名证据包)。无需 key、无需注册。
 - **付费三工具(x402)**:`compliance_decision`(网关判决)、`deep_trace`(波场深度追踪)、`batch_screen`(批量)。按需加载 `@x402`+`viem`,设置 `OCEANALT_PAYER_KEY` 才启用。价格:判决 $0.002、追踪 $0.01、批量 $0.01。也可以设置 `OCEANALT_CREDIT_TOKEN`(充值包 $0.10 = 100 次判决,在 `POST https://oceanalt.com/api/x402/credits` 购买),`compliance_decision` 每次扣 1 次,不再逐笔签名。
 - **⚠️ 真钱**:付费端点**当前在 Base 主网结算,USDC 为真实资金**(`eip155:8453`),上表 `$` 价按真实 USDC 收取。付款前务必以实时清单 <https://oceanalt.com/api/x402> 为准,并使用**小额专用付款钱包**。
 - **🔐 钱包安全**:`OCEANALT_PAYER_KEY` 只在本地签一次 EIP-3009 授权,**绝不随包发布/上传/打日志**;facilitator 代付 gas、不托管资金。**建议用小额专用钱包**,别用主资金钱包私钥。
