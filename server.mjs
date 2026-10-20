@@ -75,7 +75,7 @@ server.registerTool(
         .describe("EVM chain to screen on. Omit to auto-default to ethereum; ignored for Tron/Solana (auto-detected). One of: ethereum, base, bsc, polygon, arbitrum, optimism, avalanche."),
       lang: z.enum(["en", "zh"]).optional().describe("Language for human-readable fields (signals, note). Defaults to English."),
     },
-    annotations: { title: "Screen address (AML, free)", readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+    annotations: { title: "Screen address (AML, free)", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
   async ({ address, network, lang }) => {
     const q = new URLSearchParams({ addr: address });
@@ -112,7 +112,7 @@ server.registerTool(
       amountUsdc: z.number().optional().describe("Amount in USDC"),
       purpose: z.string().optional().describe("Purpose of the payment, e.g. api-call"),
     },
-    annotations: { title: "Payee decision (free)", readOnlyHint: false, idempotentHint: false, openWorldHint: true },
+    annotations: { title: "Payee decision (free)", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
   },
   async ({ payee, payerAddress, payerAgentId, amountUsdc, purpose }) => {
     const r = await apiPost("/api/payee/decide", { payee, payer: { address: payerAddress, agentId: payerAgentId }, amountUsdc, purpose });
@@ -139,7 +139,7 @@ server.registerTool(
       entity: z.string().optional().describe("The counterparty's entity name, e.g. \"Acme Robotics Ltd\"."),
       agentId: z.string().optional().describe("Their agent id, if you have it instead of an entity name."),
     },
-    annotations: { title: "Counterparty control baseline (free)", readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+    annotations: { title: "Counterparty control baseline (free)", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
   async ({ entity, agentId }) => {
     const q = new URLSearchParams();
@@ -173,7 +173,7 @@ server.registerTool(
     description:
       "Resolves who stands behind a paying agent: agent → principal → mandate → credential → wallet. Each link reports whether it holds, and `completeness` counts how many do — it is a factual count, not a score. Wherever the chain breaks is where accountability stops, which is what you actually need to know before accepting a payment from an autonomous agent. Publication is opt-in and only posture is exposed (that a ceiling exists, never its value), so found:false means the agent has not published — absence of information, not a bad signal. Free, no API key.",
     inputSchema: { agentId: z.string().describe("The agent id to resolve.") },
-    annotations: { title: "Resolve agent identity (free)", readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+    annotations: { title: "Resolve agent identity (free)", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
   async ({ agentId }) => {
     const r = await apiGet(`/api/registry/agent?agentId=${encodeURIComponent(agentId)}`);
@@ -203,7 +203,7 @@ server.registerTool(
     description:
       "Return a representative sample of addresses on OceanAlt's reviewed risk list — OFAC-sanctioned, known mixers, and community-reported scam/phishing — each with its source category and the reason it was flagged. Useful for grounding, showing an agent/user what gets blocked and why, or a quick read on the current threat surface. Takes no arguments. Free, no API key.",
     inputSchema: {},
-    annotations: { title: "Recent flagged addresses (free)", readOnlyHint: true, openWorldHint: true },
+    annotations: { title: "Recent flagged addresses (free)", readOnlyHint: true, destructiveHint: false, openWorldHint: true },
   },
   async () => {
     const r = await apiGet(`/api/risk/recent`);
@@ -235,7 +235,7 @@ server.registerTool(
       network: z.enum(NETWORKS).optional().describe("EVM chain for the payee (same set as screen_address). Optional; ignored for Tron."),
       lang: z.enum(["en", "zh"]).optional().describe("Language for human-readable fields (signals, note, advice). Defaults to English."),
     },
-    annotations: { title: "Payment decision (free, summary detail)", readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+    annotations: { title: "Payment decision (free, summary detail)", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
   async ({ to, amountUsdc, purpose, network, lang }) => {
     const q = new URLSearchParams({ to });
@@ -276,7 +276,7 @@ server.registerTool(
       network: z.string().optional().describe("'solana' to decode a Solana transaction; EVM chain name or CAIP-2 id otherwise."),
       transaction: z.string().optional().describe("Solana only: base64-serialized transaction or message."),
     },
-    annotations: { title: "Check intent (free)", readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+    annotations: { title: "Check intent (free)", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   async ({ intent, contract, data, value, network, transaction }) => {
     if (!transaction && !data) return { content: [{ type: "text", text: "Pass data (EVM calldata) or network:'solana' + transaction (base64)." }], isError: true };
@@ -298,7 +298,7 @@ server.registerTool(
       keys_url: z.string().optional().describe("Where the seller publishes its keys (defaults to the keys_url inside the signature)."),
       expect: z.object({ payTo: z.string().optional(), amount: z.string().optional() }).optional().describe("What you expect to pay; mismatches are reported."),
     },
-    annotations: { title: "Verify signed 402 (free)", readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+    annotations: { title: "Verify signed 402 (free)", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
   async ({ payment_required, keys_url, expect }) => {
     const r = await apiPost("/api/x402/verify-requirements", { body: payment_required, keys_url, expect });
@@ -317,7 +317,7 @@ server.registerTool(
       address: z.string().describe("EVM (0x…), Solana / Tron (base58) or Bitcoin address."),
       network: z.string().optional().describe("Chain, e.g. ethereum, base, solana (optional)."),
     },
-    annotations: { title: "Evidence bundle (free)", readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+    annotations: { title: "Evidence bundle (free)", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
   async ({ address, network }) => {
     const q = new URLSearchParams({ address }); if (network) q.set("network", network);
@@ -341,7 +341,7 @@ server.registerTool(
     inputSchema: {
       url: z.string().describe("Full URL or bare domain of the payment endpoint, e.g. https://pay.example.com/x402 or pay.example.com"),
     },
-    annotations: { title: "Screen payment endpoint (free)", readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+    annotations: { title: "Screen payment endpoint (free)", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
   async ({ url }) => {
     const r = await apiGet(`/api/endpoint?url=${encodeURIComponent(url)}`);
@@ -374,7 +374,7 @@ server.registerTool(
       previous_pay_to: z.string().optional().describe("The address you paid this requester last time"),
       expected_sender_domain: z.string().optional().describe("The domain this requester normally sends from"),
     },
-    annotations: { title: "Check a payment request (free)", readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+    annotations: { title: "Check a payment request (free)", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
   async (args) => {
     const r = await apiPost("/api/payment-request", args);
@@ -394,7 +394,7 @@ server.registerTool(
     description:
       "Fetch the OceanAlt Agent Control Baseline: the controls an agent operator is expected to run before it is allowed to move money, each answerable yes or no. Call this before attest_control_baseline so you file against real control ids. Each control says which layer enforces it.",
     inputSchema: {},
-    annotations: { title: "Get the control baseline list (free)", readOnlyHint: true, idempotentHint: true, openWorldHint: false },
+    annotations: { title: "Get the control baseline list (free)", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   },
   async () => {
     const r = await apiGet("/api/baseline");
@@ -417,7 +417,7 @@ server.registerTool(
       agentId: z.string().optional().describe("If this party already has an agent registered with OceanAlt, link the attestation to it."),
       contact: z.string().optional().describe("Contact for follow-up. Not published."),
     },
-    annotations: { title: "File a control-baseline attestation (free)", readOnlyHint: false, idempotentHint: true, openWorldHint: true },
+    annotations: { title: "File a control-baseline attestation (free)", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
   },
   async ({ entity, answers, gapPlan, agentId, contact }) => {
     const r = await apiPost("/api/baseline/attest", { entity, answers, gapPlan, agentId, contact });
@@ -503,7 +503,7 @@ server.registerTool(
       purpose: z.string().optional().describe("Short free-text note on what the payment is for. Optional (max ~120 chars)."),
       network: z.enum(NETWORKS).optional().describe("EVM chain for the payee (same set as screen_address). Optional; ignored for Tron."),
     },
-    annotations: { title: "Payment decision with full detail (paid $0.002)", readOnlyHint: false, openWorldHint: true },
+    annotations: { title: "Payment decision with full detail (paid $0.002)", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
   },
   async ({ to, amountUsdc, purpose, network }) => {
     const r = CREDIT_TOKEN
@@ -520,7 +520,7 @@ server.registerTool(
     description:
       "Trace a Tron (TRON) USDT address up to 3 hops back along its largest incoming transfers to see whether its funds touch a Tether-frozen, sanctioned, mixer, or scam address upstream — deeper than a single-address screen. Tron only (T…). PAID via x402: moves REAL money and requires OCEANALT_PAYER_KEY. Costs $0.01 in real USDC settled on Base mainnet (eip155:8453) — confirm the live network/price at https://oceanalt.com/api/x402 and use a dedicated low-balance payer wallet. Note: follows only the main funds path, depth ≤3, not exhaustive — no hit does not prove the address is clean.",
     inputSchema: { address: z.string().describe("Tron address to trace (T + 33 base58). USDT on TRON.") },
-    annotations: { title: "Deep taint trace (paid $0.01)", readOnlyHint: false, openWorldHint: true },
+    annotations: { title: "Deep taint trace (paid $0.01)", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
   },
   async ({ address }) => {
     const r = await payFetch("GET", `/api/x402/trace?addr=${encodeURIComponent(address)}`);
@@ -535,7 +535,7 @@ server.registerTool(
     description:
       "Screen up to 25 blockchain addresses in a single call. Returns a per-address verdict (clear | caution | risky | invalid), risk score, blocked flag, and top signal, plus a summary count, sorted risky-first. Cheaper per address than screening one at a time. EVM (0x…) and Tron (T…). PAID via x402: moves REAL money and requires OCEANALT_PAYER_KEY. Costs $0.01 in real USDC settled on Base mainnet (eip155:8453) — confirm the live network/price at https://oceanalt.com/api/x402 and use a dedicated low-balance payer wallet.",
     inputSchema: { addresses: z.array(z.string()).max(25).describe("Addresses to screen (max 25), each 0x… (EVM) or T… (Tron). Duplicates and blank entries are ignored.") },
-    annotations: { title: "Batch screen (paid $0.01)", readOnlyHint: false, openWorldHint: true },
+    annotations: { title: "Batch screen (paid $0.01)", readOnlyHint: false, destructiveHint: true, openWorldHint: true },
   },
   async ({ addresses }) => {
     const r = await payFetch("POST", "/api/x402/batch", { addresses });
