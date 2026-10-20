@@ -55,7 +55,9 @@ const PKG_VERSION = (() => {
   try { return JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")).version; }
   catch { return "0.0.0-unknown"; }
 })();
-const server = new McpServer({ name: "oceanalt-aml", version: PKG_VERSION });
+// 2026-10-19: many clients connect and never call a tool. Tell them the first step at initialize (same wording as the remote /api/mcp).
+const INSTRUCTIONS = "OceanAlt: pre-payment checks for agents. Start here: before every payment, call payment_decision (free, no key) with the payee address (to) and network; if the answer is not allow, do not pay. Try it with {\"to\":\"0xd90e2f925DA726b50C4Ed8D0Fb90Ad053324F31b\",\"network\":\"ethereum\"}, a known mixer, which returns decline. Then, as needed: screen_endpoint on the payment page URL, check_payment_request when an email, invoice or message asks you to pay, screen_address for a raw verdict. compliance_decision, deep_trace and batch_screen are paid versions (x402, real USDC); you do not need them to get started.";
+const server = new McpServer({ name: "oceanalt-aml", version: PKG_VERSION }, { instructions: INSTRUCTIONS });
 
 server.registerTool(
   "screen_address",
@@ -223,17 +225,17 @@ server.registerTool(
 server.registerTool(
   "payment_decision",
   {
-    title: "Decide whether to pay an address before an agent pays (free)",
+    title: "Payment decision: should the agent pay this payee? (free, summary detail)",
     description:
       "\"Before your agent pays, call OceanAlt once.\" Pass the payee address the agent is about to pay; get a machine-executable decision: allow | review | decline, plus verifiable evidence and retry semantics. Use this as a gate in an autonomous payment flow — if the decision is not \"allow\", do not pay. On allow/review it also returns a verifiable compliance attestation you can attach to the settlement so the payment carries proof it passed OceanAlt's decision. Free, no API key, no signup. (For the paid variant that also settles the payment on x402 rails, use compliance_decision.)",
     inputSchema: {
-      to: z.string().describe("Payee address the agent is about to pay. EVM: 0x + 40 hex. Tron: T + 33 base58."),
+      to: z.string().describe("Payee address the agent is about to pay: EVM (0x + 40 hex), Tron (T…), Solana (base58), Bitcoin (bc1… / 1… / 3…) or XRP Ledger (r…)."),
       amountUsdc: z.number().optional().describe("Amount in USDC (optional; recorded/echoed, not required for the decision)."),
       purpose: z.string().optional().describe("Short purpose/memo for the payment (optional)."),
       network: z.enum(NETWORKS).optional().describe("EVM chain for the payee (same set as screen_address). Optional; ignored for Tron."),
       lang: z.enum(["en", "zh"]).optional().describe("Language for human-readable fields (signals, note, advice). Defaults to English."),
     },
-    annotations: { title: "Payment decision (free)", readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+    annotations: { title: "Payment decision (free, summary detail)", readOnlyHint: true, idempotentHint: true, openWorldHint: true },
   },
   async ({ to, amountUsdc, purpose, network, lang }) => {
     const q = new URLSearchParams({ to });
@@ -355,6 +357,37 @@ server.registerTool(
 );
 
 server.registerTool(
+  "check_payment_request",
+  {
+    title: "Check an email, invoice or message that asks you to pay (free)",
+    description:
+      "Call this before paying because an email, invoice or chat message asked you to. Pass what you received: raw headers if you have them, the From line, subject and body (or body_html), and the payee address if you already extracted one. OceanAlt checks whether the sender is spoofed (SPF/DKIM/DMARC, a display name naming another domain, Reply-To sent elsewhere), whether the sender domain or links imitate a brand or are known phishing hosts, whether the payee is listed or differs from previous_pay_to, and whether the text pressures the reader, announces changed payment details, or carries instructions aimed at an AI. Returns allow | review | decline with findings. On decline, do not pay from this message. The text is processed in memory and not stored. Free, no API key.",
+    inputSchema: {
+      headers: z.string().optional().describe("Raw email headers, if available (needed for SPF/DKIM/DMARC)"),
+      from: z.string().optional().describe('The From line, e.g. "Acme Billing" <billing@acme.com>'),
+      reply_to: z.string().optional().describe("The Reply-To line, if any"),
+      subject: z.string().optional(),
+      body: z.string().optional().describe("Plain-text body, invoice text or chat message"),
+      body_html: z.string().optional().describe("HTML body, if available"),
+      pay_to: z.string().optional().describe("The payee address the message asks you to pay"),
+      network: z.string().optional().describe("Network of pay_to, e.g. base, ethereum, tron, solana"),
+      previous_pay_to: z.string().optional().describe("The address you paid this requester last time"),
+      expected_sender_domain: z.string().optional().describe("The domain this requester normally sends from"),
+    },
+    annotations: { title: "Check a payment request (free)", readOnlyHint: true, idempotentHint: true, openWorldHint: true },
+  },
+  async (args) => {
+    const r = await apiPost("/api/payment-request", args);
+    const text = [
+      `Decision: ${r.decision}  |  reason_code: ${r.reason_code || "?"}`,
+      r.findings?.length ? `Findings:\n- ${r.findings.map((f) => `[${f.level}] ${f.message}`).join("\n- ")}` : "Findings: none",
+      r.advice || "",
+    ].filter(Boolean).join("\n");
+    return { content: [{ type: "text", text }], structuredContent: r };
+  }
+);
+
+server.registerTool(
   "baseline_controls",
   {
     title: "List the control-baseline questions (free)",
@@ -461,16 +494,16 @@ function payText(title, r) {
 server.registerTool(
   "compliance_decision",
   {
-    title: "Gateway compliance decision for a payment (paid, x402 $0.002 or 1 credit)",
+    title: "Payment decision with full detail (paid, x402 $0.002 or 1 credit)",
     description:
-      "Run OceanAlt's full compliance gateway on a proposed payment and get a DECISION — allow | review | decline — plus advice and verifiable evidence, not just raw data. Combines AML screening of the payee with RAP (Responsible Agentic Payments) gate checks. Use this when an agent needs a go/no-go call before releasing funds. PAID via x402: the first request returns HTTP 402, this server automatically signs one USDC authorization and retries — this moves REAL money and requires OCEANALT_PAYER_KEY. Costs $0.002 in real USDC settled on Base mainnet (eip155:8453). Alternatively set OCEANALT_CREDIT_TOKEN (a credit pack bought at POST https://oceanalt.com/api/x402/credits: $0.10 for 100 decisions); each call then uses one credit and no payment is signed. Always confirm the live network/price at https://oceanalt.com/api/x402 and use a dedicated low-balance payer wallet.",
+      "Paid version of payment_decision. Start with the free payment_decision tool; switch to this one when you need the full evidence detail and a settled per-call receipt (x402), for example in an audited payment flow. Run OceanAlt's full compliance gateway on a proposed payment and get a DECISION — allow | review | decline — plus advice and verifiable evidence, not just raw data. Combines AML screening of the payee with RAP (Responsible Agentic Payments) gate checks. Use this when an agent needs a go/no-go call before releasing funds. PAID via x402: the first request returns HTTP 402, this server automatically signs one USDC authorization and retries — this moves REAL money and requires OCEANALT_PAYER_KEY. Costs $0.002 in real USDC settled on Base mainnet (eip155:8453). Alternatively set OCEANALT_CREDIT_TOKEN (a credit pack bought at POST https://oceanalt.com/api/x402/credits: $0.10 for 100 decisions); each call then uses one credit and no payment is signed. Always confirm the live network/price at https://oceanalt.com/api/x402 and use a dedicated low-balance payer wallet.",
     inputSchema: {
-      to: z.string().describe("Payee address the agent intends to pay. EVM (0x + 40 hex) or Tron (T + 33 base58)."),
+      to: z.string().describe("Payee address the agent intends to pay: EVM (0x + 40 hex), Tron (T…), Solana (base58), Bitcoin (bc1… / 1… / 3…) or XRP Ledger (r…)."),
       amountUsdc: z.number().optional().describe("Payment amount in USDC. Optional; used only for record / mandate-limit checks, not required to get a decision."),
       purpose: z.string().optional().describe("Short free-text note on what the payment is for. Optional (max ~120 chars)."),
       network: z.enum(NETWORKS).optional().describe("EVM chain for the payee (same set as screen_address). Optional; ignored for Tron."),
     },
-    annotations: { title: "Compliance decision (paid $0.002)", readOnlyHint: false, openWorldHint: true },
+    annotations: { title: "Payment decision with full detail (paid $0.002)", readOnlyHint: false, openWorldHint: true },
   },
   async ({ to, amountUsdc, purpose, network }) => {
     const r = CREDIT_TOKEN
