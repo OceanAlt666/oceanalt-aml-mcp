@@ -1,0 +1,27 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "com.oceanalt/aml",
+  "description": "Pre-payment checks for AI agents: sanctions and AML screening of payees, payment pages and requests.",
+  "repository": {
+    "url": "https://github.com/OceanAlt666/oceanalt-aml-mcp",
+    "source": "github"
+  },
+  "version": "0.7.5",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "oceanalt-aml-mcp",
+      "version": "0.7.5",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ],
+  "websiteUrl": "https://oceanalt.com/en/api-docs",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://oceanalt.com/api/mcp"
+    }
+  ]
+}
