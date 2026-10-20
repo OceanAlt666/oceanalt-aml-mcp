@@ -6,12 +6,12 @@
     "url": "https://github.com/OceanAlt666/oceanalt-aml-mcp",
     "source": "github"
   },
-  "version": "0.7.5",
+  "version": "0.7.6",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "oceanalt-aml-mcp",
-      "version": "0.7.5",
+      "version": "0.7.6",
       "transport": {
         "type": "stdio"
       }
