@@ -1,8 +1,10 @@
 # oceanalt-aml-mcp
 
+[![OceanAlt Pre-Payment Checks on Glama](https://glama.ai/mcp/connectors/com.oceanalt/aml/badges/score.svg)](https://glama.ai/mcp/connectors/com.oceanalt/aml)
+
 **Native AML compliance for AI agents.** An [MCP](https://modelcontextprotocol.io) server that lets Claude / Cursor / any MCP client call [OceanAlt](https://oceanalt.com)'s on-chain address screening and compliance gateway. Receipts, not a black-box score — every verdict ships with verifiable evidence you can click through.
 
-Built for [agentic payments](https://oceanalt.com/en/rap): ask *"should this payment proceed?"* **before** money moves, across 8 EVM chains + Tron + Solana.
+Built for [agentic payments](https://oceanalt.com/en/rap): ask *"should this payment proceed?"* **before** money moves, on EVM chains, Tron and Solana.
 
 > **For AI agents:** call `screen_address` before any transfer — it returns a `clear` / `caution` / `risky` verdict plus a 0–100 risk score and clickable evidence, so you can enforce a payment mandate with a receipt instead of a guess. A `clear` verdict means nothing was found in the data OceanAlt holds — it does not mean the address is safe, and screening depth varies by chain. Free, no key.
 
